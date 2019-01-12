@@ -20,7 +20,10 @@ def get_full_name(c):
 
 def find_classes(node, filename):
     if node.kind == clang.cindex.CursorKind.CLASS_DECL and node.location.file.name == filename and node.is_definition():
-        print("\t", get_full_name(node))
+        if node.is_abstract_record():
+            print("[ABSTRACT]\t", get_full_name(node))
+        else:
+            print("\t\t\t", get_full_name(node))
 
     for c in node.get_children():
         find_classes(c, filename)
