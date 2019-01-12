@@ -43,15 +43,3 @@ class Parser:
                     del arg_list[:]
                     state = ParserState.commandname
         return node
-
-    def walk(self, node, directory):
-        if node.get_type() == NodeType.command_add_subdirectory:
-            lexer = Lexer()
-            parser = Parser()
-            subdirectory = os.path.join(directory, node.get_source_dir())
-            self.walk(parser.parse(subdirectory, lexer), subdirectory)
-        elif node.get_type() == NodeType.command_add_library:
-            if not node.is_imported():
-                print(directory + ": " + node.get_library_name())
-        for c in node.get_children():
-            self.walk(c, directory)
