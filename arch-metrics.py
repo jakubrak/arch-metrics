@@ -36,11 +36,12 @@ def walk(node, directory):
         if not node.is_imported():
             print(directory + ": " + node.get_library_name())
             for filename in node.get_source_list():
-                index = clang.cindex.Index.create()
-                clang_args = '-x c++ --std=c++11'.split()
-                file_path = os.path.join(directory, filename)
-                tu = index.parse(file_path, args=clang_args)
-                find_classes(tu.cursor, file_path);
+                if filename.endswith(".h"):
+                    index = clang.cindex.Index.create()
+                    clang_args = '-x c++ --std=c++11'.split()
+                    file_path = os.path.join(directory, filename)
+                    tu = index.parse(file_path, args=clang_args)
+                    find_classes(tu.cursor, file_path);
     for c in node.get_children():
         walk(c, directory)
 
