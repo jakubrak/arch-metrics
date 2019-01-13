@@ -3,8 +3,8 @@ from cmakeparser.node import NodeType
 
 
 class AddLibraryCommand(Node):
-    def __init__(self, library_name, library_type, imported, exclude_from_all, source_list):
-        super(AddLibraryCommand, self).__init__(NodeType.command_add_library)
+    def __init__(self, library_name, library_type, imported, exclude_from_all, source_list, directory):
+        super(AddLibraryCommand, self).__init__(NodeType.command_add_library, directory)
         self.library_name = library_name
         self.library_type = library_type
         self.imported = imported
@@ -28,7 +28,7 @@ class AddLibraryCommand(Node):
 
 
 class AddLibraryCommandParser:
-    def parse(self, arg_list):
+    def parse(self, arg_list, directory):
         library_name = None
         library_type = None
         imported = False
@@ -61,4 +61,4 @@ class AddLibraryCommandParser:
                 item = next(it)
 
         except StopIteration:
-            return AddLibraryCommand(library_name, library_type, imported, exclude_from_all, source_list)
+            return AddLibraryCommand(library_name, library_type, imported, exclude_from_all, source_list, directory)

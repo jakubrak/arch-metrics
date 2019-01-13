@@ -24,7 +24,7 @@ class Parser:
         state = ParserState.commandname
         command_name = None
         arg_list = []
-        node = Node(NodeType.root)
+        node = Node(NodeType.root, directory)
         for token in lexer.scan(os.path.join(directory, "CMakeLists.txt")):
             if state == ParserState.commandname:
                 if token[0] == TokenType.identifier:
@@ -39,7 +39,7 @@ class Parser:
                 if token[0] == TokenType.rightparen:
                     command_parser = self.command_map.get(command_name)
                     if command_parser:
-                        node.add_child(command_parser.parse(arg_list))
+                        node.add_child(command_parser.parse(arg_list, directory))
                     del arg_list[:]
                     state = ParserState.commandname
         return node

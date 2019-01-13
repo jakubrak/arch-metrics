@@ -3,8 +3,8 @@ from cmakeparser.node import NodeType
 
 
 class AddSubdirectoryCommand(Node):
-    def __init__(self, source_dir, binary_dir, exclude_from_all):
-        super(AddSubdirectoryCommand, self).__init__(NodeType.command_add_subdirectory)
+    def __init__(self, source_dir, binary_dir, exclude_from_all, directory):
+        super(AddSubdirectoryCommand, self).__init__(NodeType.command_add_subdirectory, directory)
         self.source_dir = source_dir
         self.binary_dir = binary_dir
         self.exclude_from_all = exclude_from_all
@@ -20,7 +20,7 @@ class AddSubdirectoryCommand(Node):
 
 
 class AddSubdirectoryCommandParser:
-    def parse(self, arg_list):
+    def parse(self, arg_list, directory):
         source_dir = None
         binary_dir = None
         exclude_from_all = False
@@ -32,6 +32,4 @@ class AddSubdirectoryCommandParser:
         if len(arg_list) > 2 and arg_list[2] == "EXCLUDE_FROM_ALL":
             exclude_from_all = True
 
-        # print("add_subdirectory", arg_list)
-
-        return AddSubdirectoryCommand(source_dir, binary_dir, exclude_from_all)
+        return AddSubdirectoryCommand(source_dir, binary_dir, exclude_from_all, directory)

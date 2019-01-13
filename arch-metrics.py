@@ -18,38 +18,62 @@ def get_full_name(c):
     return c.spelling
 
 
-def find_classes(node, filename):
-    if node.kind == clang.cindex.CursorKind.CLASS_DECL and node.location.file.name == filename and node.is_definition():
-        if node.is_abstract_record():
-            print("[ABSTRACT]\t", get_full_name(node))
+def find_classes(filename):
+    classes = []
+
+    index = clang.cindex.Index.create()
+    clang_args = '-x c++ --std=c++11'.split()
+    tu = index.parse(filename, args=clang_args)
+
+    nodes = [tu.cursor]
+
+    while nodes:
+        node = nodes.pop()
+        if node.kind == clang.cindex.CursorKind.CLASS_DECL \
+                and node.location.file.name == filename \
+                and node.is_definition():
+            classes.append(node)
+
+        for c in node.get_children():
+            nodes.append(c)
+
+    return classes
+
+
+def walk(directory):
+    class_categories = dict()
+
+    lexer = Lexer()
+    parser = Parser()
+
+    nodes = [parser.parse(directory, lexer)]
+
+    while nodes:
+        node = nodes.pop()
+
+        if node.get_type() == NodeType.command_add_subdirectory:
+            nodes.append(parser.parse(os.path.join(directory, node.get_source_dir()), lexer))
+        elif node.get_type() == NodeType.command_add_library:
+            if not node.is_imported():
+                print(node.get_directory() + ": " + node.get_library_name())
+                classes = []
+                for filename in node.get_source_list():
+                    if filename.endswith(".h"):
+                        classes += find_classes(os.path.join(node.get_directory(), filename))
+                class_categories[node] = classes
+
+        for c in node.get_children():
+            nodes.append(c)
+
+    return class_categories
+
+
+class_categories = walk(sys.argv[1])
+
+for ct in class_categories:
+    for c in class_categories[ct]:
+        class_name = get_full_name(c)
+        if c.is_abstract_record():
+            print("[ABSTRACT]\t", class_name)
         else:
-            print("\t\t\t", get_full_name(node))
-
-    for c in node.get_children():
-        find_classes(c, filename)
-
-
-def walk(node, directory):
-    if node.get_type() == NodeType.command_add_subdirectory:
-        lexer = Lexer()
-        parser = Parser()
-        subdirectory = os.path.join(directory, node.get_source_dir())
-        walk(parser.parse(subdirectory, lexer), subdirectory)
-    elif node.get_type() == NodeType.command_add_library:
-        if not node.is_imported():
-            print(directory + ": " + node.get_library_name())
-            for filename in node.get_source_list():
-                if filename.endswith(".h"):
-                    index = clang.cindex.Index.create()
-                    clang_args = '-x c++ --std=c++11'.split()
-                    file_path = os.path.join(directory, filename)
-                    tu = index.parse(file_path, args=clang_args)
-                    find_classes(tu.cursor, file_path);
-    for c in node.get_children():
-        walk(c, directory)
-
-
-lexer = Lexer()
-parser = Parser()
-node = parser.parse(sys.argv[1], lexer)
-walk(node, sys.argv[1])
+            print("\t\t\t", class_name)
