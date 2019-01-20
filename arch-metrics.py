@@ -1,139 +1,13 @@
 import os
 import re
 import clang.cindex
-from cmakeparser.parser import Parser
-from cmakeparser.lexer import Lexer
-from cmakeparser.node import NodeType
-
-
-def get_full_name(c):
-    if c is None:
-        return ''
-    elif c.kind == clang.cindex.CursorKind.TRANSLATION_UNIT:
-        return ''
-    else:
-        res = get_full_name(c.semantic_parent)
-        if res != '':
-            return res + '::' + c.spelling
-    return c.spelling
-
-
-def find_classes(filename):
-    classes = []
-
-    index = clang.cindex.Index.create()
-    clang_args = '-x c++'.split()
-    tu = index.parse(filename, args=clang_args)
-
-    nodes = [tu.cursor]
-
-    while nodes:
-        node = nodes.pop()
-        if node.kind == clang.cindex.CursorKind.CLASS_DECL \
-                and node.location.file.name == filename \
-                and node.is_definition():
-            classes.append(node)
-
-        for c in node.get_children():
-            nodes.append(c)
-
-    return classes
-
-def count_class_refernces(filename, classes):
-    index = clang.cindex.Index.create()
-    args = "-x c++ -g -Wall -Werror --std=gnu++11 " \
-        "-I/home/powerless/volar/volar/src/dbconn " \
-        "-I/home/powerless/volar/volar/src/dbconn/public/include/dbconn " \
-        "-I/home/powerless/volar/volar/src/base/public/include " \
-        "-I/home/powerless/volar/volar/src/problem/public/include " \
-        "-I/home/powerless/volar/volar/src/aircraftPerformance/public/include " \
-        "-I/home/powerless/volar/volar/src/airwayNetwork/public/include " \
-        "-I/home/powerless/volar/volar/src/navigation/public/include " \
-        "-I/home/powerless/volar/volar/src/util/public/include " \
-        "-I/home/powerless/volar/volar/src/weather/public/include " \
-        "-I/home/powerless/volar/volar/src/instances/public/include " \
-        "-I/home/powerless/volar/volar/src/inputReader/public/include " \
-        "-I/home/powerless/volar/volar/src/tfr/public/include " \
-        "-I/home/powerless/volar/volar/src/error/public/include " \
-        "-isystem /usr/include/postgresql " \
-        "-isystem /usr/include/postgresql/9.6/server " \
-        "-I/usr/lib/gcc/x86_64-linux-gnu/6/include"
-    tu = index.parse(filename, args=args.split())
-    for d in tu.diagnostics:
-        print(d.spelling)
-
-    nodes = [tu.cursor]
-    reference_count = 0
-
-    while nodes:
-        node = nodes.pop()
-
-        if node.kind == clang.cindex.CursorKind.INCLUSION_DIRECTIVE:
-            print(node.location.line, node.kind.name, node.spelling)
-
-        if node.location.file and node.location.file.name == filename:
-            print(node.location.file.name, node.location.line, node.kind.name, node.spelling)
-
-        for c in node.get_children():
-            nodes.append(c)
-
-    return reference_count
-
-
-def generate_class_categories(directory):
-    class_categories = dict()
-
-    lexer = Lexer()
-    parser = Parser()
-
-    nodes = [parser.parse(directory, lexer)]
-
-    while nodes:
-        node = nodes.pop()
-
-        if node.get_type() == NodeType.command_add_subdirectory:
-            nodes.append(parser.parse(os.path.join(directory, node.get_source_dir()), lexer))
-        elif node.get_type() == NodeType.command_add_library:
-            if not node.is_imported():
-                print(node.get_directory() + ": " + node.get_library_name())
-                classes = []
-                for filename in node.get_source_list():
-                    if filename.endswith(".h"):
-                        classes += find_classes(os.path.join(node.get_directory(), filename))
-                class_categories[node] = classes
-
-        for c in node.get_children():
-            nodes.append(c)
-
-    return class_categories
-
-
-# class_categories = generate_class_categories(sys.argv[1])
-#
-# for ct in class_categories:
-#     for c in class_categories[ct]:
-#         class_name = get_full_name(c)
-#         if c.is_abstract_record():
-#             print("[ABSTRACT]\t", class_name)
-#         else:
-#             print("\t\t\t", class_name)
-
-# for c in find_classes("../volar/volar/src/dbconn/DbContext.h"):
-#     print(get_full_name(c))
-
-#count_class_refernces("../volar/volar/src/dbconn/DbContext.cpp", [])
-#count_class_refernces("../test.cpp", [])
-
-
-class ClassCategory:
-    def __init__(self, name):
-        self.name = name
 
 
 class TranslationUnit:
     def __init__(self, filename, compilation_flags):
         self.filename = filename
         self.compilation_flags = compilation_flags
+        self.class_references = set()
 
     def get_filename(self):
         return self.filename
@@ -144,8 +18,7 @@ class TranslationUnit:
     def parse(self, package_directory, root_directory):
         print("Parsing", self.filename)
 
-        classes = set()
-        class_references = set()
+        self.class_references = set()
 
         index = clang.cindex.Index.create()
         tu = index.parse(self.filename, args=self.compilation_flags)
@@ -154,37 +27,63 @@ class TranslationUnit:
             # if d.severity > clang.cindex.Diagnostic.Warning:
             #    raise Exception(d.spelling)
 
-        nodes = [tu.cursor]
+        for c in tu.cursor.walk_preorder():
+            if c.kind == clang.cindex.CursorKind.CLASS_DECL and c.is_definition():
+                if package_directory in c.location.file.name:
+                    self.check_class_definition(c, package_directory, root_directory)
 
-        while nodes:
-            node = nodes.pop()
-            if node.location.file and node.spelling and package_directory in node.location.file.name:
-                if node.kind == clang.cindex.CursorKind.CXX_BASE_SPECIFIER:
-                    print(node.spelling, node.kind.name, node.type.kind, node.type.get_declaration().location.file.name)
+        return self.class_references
 
-            if node.kind == clang.cindex.CursorKind.CLASS_DECL \
-                    and node.is_definition():
+    def check_class_definition(self, root_cursor, package_directory, root_directory):
+        class_name = root_cursor.type.spelling
+        print(class_name)
+        for cursor in root_cursor.walk_preorder():
+            # if "_terminalProcedure" in cursor.spelling:
+            #     for cursor in cursor.walk_preorder():
+            #         print("Template! ", cursor.kind.name, cursor.type.spelling, get_full_name(cursor))
 
-                full_name = get_full_name(node)
-                if package_directory in node.location.file.name:
-                    classes.add(full_name)
+            if cursor.kind == clang.cindex.CursorKind.CXX_BASE_SPECIFIER:
+                cursor_definition = self.get_cursor_definition(cursor)
+                if self.is_class_from_another_project_package(cursor_definition, package_directory, root_directory):
+                    self.class_references.add((class_name, cursor_definition.type.spelling))
+                    print("\t", cursor.kind.name, cursor.type.spelling, get_full_name(cursor))
 
-            if (node.kind == clang.cindex.CursorKind.TYPE_REF \
-                    or node.kind == clang.cindex.CursorKind.CXX_BASE_SPECIFIER) \
-                    and node.type.kind == clang.cindex.TypeKind.RECORD:
-                node_type_declaration = node.type.get_declaration()
-                if node_type_declaration:
-                    node_type_definition = node_type_declaration.get_definition()
-                    if node_type_definition \
-                            and node_type_definition.location.file \
-                            and root_directory in node.type.get_declaration().location.file.name:
-                        #print("Adding", node.spelling, node.type.get_declaration().location.file.name)
-                        class_references.add(node.type.spelling)
+            elif cursor.kind == clang.cindex.CursorKind.TYPE_REF:
+                cursor_definition = self.get_cursor_definition(cursor)
+                if self.is_class_from_another_project_package(cursor_definition, package_directory, root_directory):
+                    self.class_references.add((class_name, cursor_definition.type.spelling))
+                    #print("\t", cursor.kind.name, node_type.spelling, get_full_name(cursor))
 
-            for c in node.get_children():
-                nodes.append(c)
+            elif cursor.kind == clang.cindex.CursorKind.CXX_METHOD \
+                    or cursor.kind == clang.cindex.CursorKind.CONSTRUCTOR \
+                    or cursor.kind == clang.cindex.CursorKind.DESTRUCTOR\
+                    or cursor.kind == clang.cindex.CursorKind.CONVERSION_FUNCTION:
+                #print("\t", cursor.kind.name, get_full_name(cursor))
+                function_definition_node = cursor.get_definition()
+                if function_definition_node:  # in case of 'default' keyword used for constructor/destructor
+                    self.check_function_definition(function_definition_node, class_name, package_directory, root_directory)
 
-        return classes, class_references
+    def check_function_definition(self, root_cursor, class_name, package_directory, root_directory):
+        for cursor in root_cursor.walk_preorder():
+            if cursor.kind == clang.cindex.CursorKind.TYPE_REF:
+                cursor_definition = self.get_cursor_definition(cursor)
+                if self.is_class_from_another_project_package(cursor_definition, package_directory, root_directory):
+                    self.class_references.add((class_name, cursor_definition.type.spelling))
+                    #print("\t\t", cursor.kind.name, cursor.type.spelling, cursor.spelling)
+
+    def is_class_from_another_project_package(self, cursor, package_directory, root_directory):
+        return cursor \
+                and cursor.location.file \
+                and root_directory in cursor.location.file.name \
+                and package_directory not in cursor.location.file.name \
+                and cursor.type.kind == clang.cindex.TypeKind.RECORD
+
+    def get_cursor_definition(self, cursor):
+        cursor_type = cursor.type
+        if cursor_type.kind == clang.cindex.TypeKind.LVALUEREFERENCE \
+                or cursor_type.kind == clang.cindex.TypeKind.MEMBERPOINTER:
+            cursor_type = cursor_type.get_pointee()
+        return cursor_type.get_declaration().get_definition()
 
 
 class Package:
@@ -196,9 +95,7 @@ class Package:
         self.class_references = set()
 
     def add_translation_unit(self, translation_unit, root_directory):
-        (classes, class_references) = translation_unit.parse(self.directory, root_directory)
-        self.classes = self.classes.union(classes)
-        self.class_references = self.class_references.union(class_references)
+        self.class_references = self.class_references.union(translation_unit.parse(self.directory, root_directory))
         self.translation_units.append(translation_unit)
 
     def get_name(self):
@@ -244,7 +141,7 @@ def scan_project():
                 package_name = re.findall(r"/(.*).dir/", arg)[0]
             last_arg = arg
         tu = TranslationUnit(compile_command.filename, include_dirs)
-        if package_name == "InputReader":
+        if package_name == "Dbconn":
             if packages.get(package_name):
                 packages[package_name].add_translation_unit(tu, source_directory)
             else:
@@ -262,8 +159,5 @@ for package_name, package in packages.items():
     print("Translation units:")
     for tu in package.get_translation_units():
         print(tu.get_filename())
-    print("Classes:")
-    print(package.get_classes())
-    print("Class references:")
-    print(package.get_class_references())
-    print("\n")
+    for class_reference in sorted(package.get_class_references()):
+        print(class_reference)
